@@ -34,9 +34,10 @@ final class Post: Model, Content {
     
     init() { }
     
-    init(id: UUID? = nil, userID: User.IDValue, contenURL: String?, createdAt: Date?) {
+    init(id: UUID? = nil, userID: User.IDValue, contentURL: String?, createdAt: Date?) {
         self.id = id
         self.$user.id = userID
+        self.contentURL = contentURL
         self.createdAt = createdAt
     }
 }

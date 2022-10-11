@@ -8,7 +8,7 @@
 import Fluent
 import Vapor
 
-final class CommentLike: Model {
+final class CommentLike: Model, Content {
     static let schema = "commentLikes"
     
     @ID(key: .id)
@@ -34,8 +34,8 @@ extension CommentLike {
         func prepare(on database: Database) async throws {
             try await database.schema(CommentLike.schema)
                 .id()
-                .field("commentID", .int, .required, .references(Comment.schema, "id"))
-                .field("userID", .int, .required, .references(User.schema, "id"))
+                .field("commentID", .uuid, .required, .references(Comment.schema, "id"))
+                .field("userID", .uuid, .required, .references(User.schema, "id"))
                 .create()
         }
         

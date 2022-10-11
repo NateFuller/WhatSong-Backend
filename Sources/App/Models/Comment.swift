@@ -37,17 +37,19 @@ final class Comment: Model, Content {
     
     init() { }
     
-    init(id: UUID? = nil, userID: User.IDValue, content: String, createdAt: Date?) {
+    init(id: UUID? = nil, userID: User.IDValue, postID: Post.IDValue, content: String, createdAt: Date?) {
         self.id = id
         self.content = content
         self.createdAt = createdAt
+        self.$user.id = userID
+        self.$post.id = postID
     }
 }
 
 extension Comment {
     struct Migration: AsyncMigration {
         func prepare(on database: Database) async throws {
-            try await database.schema("comments")
+            try await database.schema(Comment.schema)
                 .id()
                 .field("content", .string)
                 .field("createdAt", .datetime)

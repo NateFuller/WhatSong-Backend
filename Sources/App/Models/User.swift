@@ -39,6 +39,8 @@ final class User: Model, Content {
     @Siblings(through: CommentLike.self, from: \.$user, to: \.$comment)
     public var likedComments: [Comment]
     
+    // TODO: FollowedUsers
+    
     // MARK: - Initializers
 
     init() { }
@@ -68,6 +70,7 @@ extension User {
                 .field("comments", .array(of: .uuid))
                 .field("posts", .array(of: .uuid))
                 .field("likedComments", .array(of: .uuid))
+                .unique(on: "username")
                 .unique(on: "email")
                 .create()
         }
