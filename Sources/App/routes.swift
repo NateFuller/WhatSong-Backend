@@ -22,30 +22,38 @@ func routes(_ app: Application) throws {
     
     // MARK: PUT /comment/like
     
-    app.put("comment", "like") { req async throws -> CommentLike in
+    app.put("comment", "like") { req async throws -> Response in
         let commentLike = try req.content.decode(CommentLike.self)
         
-        if let existingLike = try await CommentLike.query(on: req.db)
+        if try await CommentLike.query(on: req.db)
             .with(\.$user)
             .filter(\.$user.$id == commentLike.$user.id)
             .filter(\.$comment.$id == commentLike.$comment.id)
-            .first() {
-            return existingLike
-        }
-        
-        guard let comment = try await Comment.query(on: req.db)
-            .filter(\.$id == commentLike.$comment.id)
-            .with(\.$user)
-            .with(\.$likes)
-            .first() else {
-            throw Abort(.notFound)
+            .first() != nil {
+            return .init(status: .noContent)
         }
         
         try await commentLike.create(on: req.db)
-        try await commentLike.$user.load(on: req.db)
-        print("Comment is attached to user: \(try await comment.$likes.isAttached(to: commentLike.user, on: req.db))")
         
-        return commentLike
+        return .init(status: .ok)
+    }
+    
+    // MARK: DELETE /comment/like
+    
+    app.delete("comment", "like") { req async throws -> Response in
+        let commentLike = try req.content.decode(CommentLike.self)
+        
+        guard let existingLike = try await CommentLike.query(on: req.db)
+            .with(\.$user)
+            .filter(\.$user.$id == commentLike.$user.id)
+            .filter(\.$comment.$id == commentLike.$comment.id)
+            .first() else {
+            return .init(status: .noContent)
+        }
+        
+        try await existingLike.delete(on: req.db)
+        
+        return .init(status: .ok)
     }
     
     // MARK: DELETE /comments (Dev)
