@@ -10,6 +10,8 @@ public func configure(_ app: Application) async throws {
 //    app.databases.use(.sqlite(.file("db.sqlite")), as: .sqlite) // use file for db
     app.databases.use(.sqlite(.memory), as: .sqlite) // use memory for db
     
+    app.passwords.use(.bcrypt)
+    
     app.migrations.add(User.Migration())
     app.migrations.add(Comment.Migration())
     app.migrations.add(CommentLike.Migration())

@@ -16,17 +16,23 @@ final class User: Model, Content {
     @ID(key: .id)
     var id: UUID?
     
-    @OptionalField(key: "profileImageURL")
-    var profileImageURL: String?
-
-    @OptionalField(key: "username")
-    var username: String?
+    @Timestamp(key: "createdAt", on: .create)
+    var createdAt: Date?
     
     @Field(key: "email")
     var email: String
+
+    @Field(key: "password")
+    var password: String
     
-    @Timestamp(key: "createdAt", on: .create)
-    var createdAt: Date?
+    @OptionalField(key: "profileImageURL")
+    var profileImageURL: String?
+    
+    @OptionalField(key: "username")
+    var username: String?
+    
+    @OptionalField(key: "usernameLastModified")
+    var usernameLastModified: Date?
     
     // MARK: - Relations
     
@@ -48,13 +54,17 @@ final class User: Model, Content {
     init(id: UUID? = nil,
          createdAt: Date? = nil,
          email: String,
+         password: String,
          profileImageURL: String? = nil,
-         username: String? = nil) {
+         username: String? = nil,
+         usernameLastModified: Date? = nil) {
         self.id = id
         self.createdAt = createdAt
         self.email = email
+        self.password = password
         self.profileImageURL = profileImageURL
         self.username = username
+        self.usernameLastModified = usernameLastModified
     }
 }
 
@@ -63,13 +73,15 @@ extension User {
         func prepare(on database: Database) async throws {
             try await database.schema(User.schema)
                 .id()
+                .field("comments", .array(of: .uuid))
                 .field("createdAt", .datetime)
                 .field("email", .string, .required)
+                .field("likedComments", .array(of: .uuid))
+                .field("password", .string)
+                .field("posts", .array(of: .uuid))
                 .field("profileImageURL", .string)
                 .field("username", .string)
-                .field("comments", .array(of: .uuid))
-                .field("posts", .array(of: .uuid))
-                .field("likedComments", .array(of: .uuid))
+                .field("usernameLastModified", .datetime)
                 .unique(on: "username")
                 .unique(on: "email")
                 .create()
@@ -78,5 +90,15 @@ extension User {
         func revert(on database: Database) async throws {
             try await database.schema("users").delete()
         }
+    }
+}
+
+extension Optional where Wrapped == String {
+    var isNilOrEmpty: Bool {
+        guard let wrapped = wrapped else {
+            return true
+        }
+        
+        return wrapped.isEmpty
     }
 }

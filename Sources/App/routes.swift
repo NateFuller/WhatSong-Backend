@@ -28,11 +28,23 @@ func routes(_ app: Application) throws {
         if let existingLike = try await CommentLike.query(on: req.db)
             .with(\.$user)
             .filter(\.$user.$id == commentLike.$user.id)
-            .filter(\.$comment.$id == commentLike.$comment.id).first() {
+            .filter(\.$comment.$id == commentLike.$comment.id)
+            .first() {
             return existingLike
         }
         
+        guard let comment = try await Comment.query(on: req.db)
+            .filter(\.$id == commentLike.$comment.id)
+            .with(\.$user)
+            .with(\.$likes)
+            .first() else {
+            throw Abort(.notFound)
+        }
+        
         try await commentLike.create(on: req.db)
+        try await commentLike.$user.load(on: req.db)
+        print("Comment is attached to user: \(try await comment.$likes.isAttached(to: commentLike.user, on: req.db))")
+        
         return commentLike
     }
     
@@ -58,7 +70,7 @@ func routes(_ app: Application) throws {
     // MARK: POST /user/create
     
     app.group(NewUserMiddleware()) {
-        $0.post("user", "create") { req async throws -> User in
+        $0.post("user", "create") { req async throws -> UserResponse.Basic in
             let user = try req.content.decode(User.self)
             
             guard try await User.query(on: req.db)
@@ -66,14 +78,17 @@ func routes(_ app: Application) throws {
                 throw Abort(.notFound, reason: "An account with that email address already exists.")
             }
             
+            user.password = try await req.password.async.hash(user.password)
+            
             try await user.create(on: req.db)
-            return user
+            
+            return UserResponse.Basic(user: user)
         }
     }
     
     // MARK: GET /user/:username
     
-    app.get("user", ":username") { req async throws -> User in
+    app.get("user", ":username") { req async throws -> UserResponse.Basic in
         let username = req.parameters.get("username")!
         
         guard let user = try await User.query(on: req.db)
@@ -82,32 +97,25 @@ func routes(_ app: Application) throws {
             throw Abort(.notFound)
         }
         
-        return user
+        return UserResponse.Basic(user: user)
     }
     
-    // MARK: PUT /user/:username
+    // MARK: PUT /user
     
     app.put("user") { req async throws -> Response in
-        let bodyUser = try req.content.decode(User.self)
+        let bodyUser = try req.content.decode(UserRequest.UpdateUsername.self)
         
-        guard let userID = bodyUser.id else {
-            throw Abort(.badRequest, reason: "Request body must specify ID of existing user")
+        guard let matchingUser = try await User.query(on: req.db)
+            .filter(\.$id == bodyUser.id)
+            .first() else {
+            throw Abort(.notFound)
         }
-        
-        guard let requestedUserName = bodyUser.username else {
-            throw Abort(.badRequest, reason: "Request body must specify desired username")
-        }
-        
-        let matchingUser = try await User.query(on: req.db)
-            .filter(\.$id == userID)
-            .first()
 
-        if let matchingUser = matchingUser, matchingUser.username == requestedUserName {
-            let response = try await matchingUser.encodeResponse(status: .noContent, for: req)
+        if matchingUser.username == bodyUser.username {
+            let basicResponse = UserResponse.Basic(user: matchingUser)
+            let updatedResponse = try await basicResponse.encodeResponse(status: .noContent, for: req)
             
-            return response
-        } else if matchingUser == nil {
-            throw Abort(.notFound, reason: "User not found")
+            return updatedResponse
         }
         
         let existingUsernameCount = try await User.query(on: req.db)
@@ -120,18 +128,27 @@ func routes(_ app: Application) throws {
             throw Abort(.internalServerError, reason: "An unexpected error occured updating this user.")
         }
         
+        if let lastModifiedDate = matchingUser.usernameLastModified {
+            let cooldownEndsAt = lastModifiedDate.addingTimeInterval(60*60*24)
+            
+            if Date() < cooldownEndsAt {
+                throw UserError.userRenameCooldown(lastModifiedDate, cooldownEndsAt)
+            }
+        }
+        
         try await User.query(on: req.db)
-            .set(\.$username, to: requestedUserName)
-            .filter(\.$id == userID)
+            .set(\.$username, to: bodyUser.username)
+            .set(\.$usernameLastModified, to: Date())
+            .filter(\.$id == bodyUser.id)
             .update()
         
         guard let updatedUser = try await User.query(on: req.db)
-            .filter(\.$username == requestedUserName)
+            .filter(\.$username == bodyUser.username)
             .first() else {
             throw Abort(.internalServerError, reason: "An unexpected error occurred updating this user.")
         }
         
-        return try await updatedUser.encodeResponse(for: req)
+        return try await UserResponse.UsernameUpdated(user: updatedUser).encodeResponse(for: req)
     }
     
     // MARK: - Post
@@ -165,22 +182,49 @@ func routes(_ app: Application) throws {
         return post
     }
     
-    // MARK: GET /posts/user/:id
+    // MARK: GET /posts/user/:username
     
-    app.get("posts", "user", ":id") { req async throws -> [Post] in
-        let idString = req.parameters.get("id")!
-        guard let userUUID = UUID(uuidString: idString) else {
-            throw Abort(.notFound)
-        }
+    app.get("posts", "user", ":username") { req async throws -> [Post] in
+        let username = req.parameters.get("username")!
         
         guard let user = try await User.query(on: req.db)
-            .filter(\.$id == userUUID)
+            .filter(\.$username == username)
             .with(\.$posts)
             .first() else {
             throw Abort(.notFound)
         }
         
         return user.posts
+    }
+    
+    // MARK: GET /likedComments/user/:username
+    
+    app.get("likedComments", "user", ":username") { req async throws -> [Comment] in
+        let username = req.parameters.get("username")!
+        
+        guard let user = try await User.query(on: req.db)
+            .filter(\.$username == username)
+            .with(\.$likedComments)
+            .first() else {
+            throw Abort(.notFound)
+        }
+
+        return user.likedComments
+    }
+    
+    // MARK : GET /comments/user/:username
+    
+    app.get("comments", "user", ":username") { req async throws -> [Comment] in
+        let username = req.parameters.get("username")!
+        
+        guard let user = try await User.query(on: req.db)
+            .filter(\.$username == username)
+            .with(\.$comments)
+            .first() else {
+            throw Abort(.notFound)
+        }
+
+        return user.comments
     }
 }
 
