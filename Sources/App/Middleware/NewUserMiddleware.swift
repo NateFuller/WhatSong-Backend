@@ -11,7 +11,7 @@ struct NewUserMiddleware: AsyncMiddleware {
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         let user = try request.content.decode(User.self)
         
-        guard !user.password.isEmpty else {
+        guard !user.password.isEmpty && user.password.count > 7 else {
             throw UserError.invalidPassword
         }
         
