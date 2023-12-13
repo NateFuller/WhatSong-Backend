@@ -64,8 +64,8 @@ func routes(_ app: Application) throws {
         }
         
         if let sql = req.db as? SQLDatabase {
-            try sql.delete(from: "comments")
-                .run().wait()
+            try await sql.delete(from: "comments")
+                .run().get()
             
             return "⚠️ Deleted all comments! ⚠️"
         } else {
